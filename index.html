@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <meta name="theme-color" content="#f26822"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>MoneroPay</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <!-- QR code library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --orange: #f26822;
+      --orange-dark: #d4551a;
+      --bg: #0f0f0f;
+      --card: #1a1a1a;
+      --border: rgba(255,255,255,0.08);
+      --text: #ffffff;
+      --muted: rgba(255,255,255,0.45);
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      display: flex; flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,15,15,0.95); backdrop-filter: blur(10px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .logo { display: flex; align-items: center; gap: 0.5rem; font-weight: 800; font-size: 1.1rem; }
+    .logo-icon { width: 30px; height: 30px; }
+    .mode-toggle {
+      display: flex; background: var(--card); border-radius: 10px;
+      border: 1px solid var(--border); overflow: hidden;
+    }
+    .mode-btn {
+      padding: 0.4rem 0.9rem; font-size: 0.78rem; font-weight: 600;
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-btn.active { background: var(--orange); color: white; }
+
+    /* ── Main ── */
+    main { flex: 1; padding: 1.25rem; max-width: 480px; margin: 0 auto; width: 100%; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px; padding: 1.5rem; margin-bottom: 1rem;
+    }
+    .card-title {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;
+    }
+
+    /* ── Inputs ── */
+    label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--muted); margin-bottom: 0.4rem; }
+    input {
+      width: 100%; background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 0.75rem 1rem; font-size: 1rem; color: var(--text);
+      font-family: inherit; outline: none; transition: border-color 0.15s;
+    }
+    input:focus { border-color: var(--orange); }
+    input::placeholder { color: rgba(255,255,255,0.2); }
+    .input-group { margin-bottom: 1rem; }
+    .input-row { display: flex; gap: 0.5rem; }
+    .input-row > * { flex: 1; }
+
+    /* Amount input with currency switcher */
+    .amount-wrap { position: relative; }
+    .amount-wrap input { padding-right: 5rem; font-size: 1.4rem; font-weight: 700; }
+    .currency-btn {
+      position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+      background: var(--orange); border: none; border-radius: 8px;
+      color: white; font-size: 0.75rem; font-weight: 700;
+      padding: 0.3rem 0.6rem; cursor: pointer; transition: background 0.15s;
+    }
+    .currency-btn:hover { background: var(--orange-dark); }
+
+    .rate-line {
+      font-size: 0.82rem; color: var(--muted); margin-top: 0.4rem; height: 1.2em;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      width: 100%; padding: 1rem; border-radius: 14px; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      transition: all 0.15s; font-family: inherit;
+    }
+    .btn-orange { background: var(--orange); color: white; }
+    .btn-orange:hover { background: var(--orange-dark); }
+    .btn-orange:active { transform: scale(0.98); }
+    .btn-ghost {
+      background: rgba(255,255,255,0.06); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.1); }
+
+    /* ── QR display ── */
+    #qr-section { display: none; }
+    .qr-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 1rem; padding: 0.5rem 0;
+    }
+    #qr-canvas {
+      border-radius: 16px; background: white; padding: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .qr-amount {
+      font-size: 2.2rem; font-weight: 900; color: var(--orange); line-height: 1;
+    }
+    .qr-sub { font-size: 0.85rem; color: var(--muted); }
+    .qr-address {
+      font-size: 0.72rem; color: var(--muted);
+      word-break: break-all; text-align: center;
+      background: rgba(255,255,255,0.04); padding: 0.6rem 0.8rem;
+      border-radius: 10px; border: 1px solid var(--border);
+      width: 100%;
+    }
+
+    /* ── Status indicator ── */
+    .status-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted); margin-right: 0.4rem;
+      animation: pulse 2s infinite;
+    }
+    .status-dot.waiting { background: #f59e0b; }
+    .status-dot.confirmed { background: var(--success); animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-text { font-size: 0.85rem; font-weight: 600; }
+
+    /* ── Success overlay ── */
+    #success-overlay {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(15,15,15,0.95); backdrop-filter: blur(8px);
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 2rem; gap: 1rem;
+    }
+    #success-overlay.show { display: flex; }
+    .success-icon { font-size: 5rem; line-height: 1; }
+    .success-title { font-size: 2rem; font-weight: 900; color: var(--success); }
+    .success-amount { font-size: 1.1rem; color: var(--muted); }
+
+    /* ── History ── */
+    #history-section { display: none; }
+    .tx-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.8rem 0; border-bottom: 1px solid var(--border);
+    }
+    .tx-item:last-child { border-bottom: none; }
+    .tx-left { display: flex; flex-direction: column; gap: 0.2rem; }
+    .tx-label { font-size: 0.9rem; font-weight: 600; }
+    .tx-time { font-size: 0.75rem; color: var(--muted); }
+    .tx-amount { font-size: 1rem; font-weight: 700; color: var(--orange); }
+    .empty-state { text-align: center; color: var(--muted); padding: 2rem; font-size: 0.9rem; }
+
+    /* ── Setup screen ── */
+    #setup-section { }
+    .setup-desc {
+      font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 1.5rem;
+    }
+
+    /* ── Customer view ── */
+    #customer-section { display: none; }
+    .scan-prompt {
+      text-align: center; padding: 3rem 1rem;
+      color: var(--muted); font-size: 0.95rem; line-height: 1.7;
+    }
+    .scan-icon { font-size: 4rem; margin-bottom: 1rem; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center; padding: 1rem;
+      font-size: 0.72rem; color: rgba(255,255,255,0.2);
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: rgba(255,255,255,0.3); text-decoration: none; }
+    footer a:hover { color: var(--orange); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="32" fill="#f26822"/>
+      <path d="M14 46V24l18-12 18 12v22h-8V32l-10-7-10 7v14H14z" fill="white"/>
+      <path d="M24 46V36l8-5 8 5v10h-6v-6l-2-1.5-2 1.5v6h-6z" fill="white" opacity="0.7"/>
+    </svg>
+    MoneroPay
+  </div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="btn-merchant" onclick="setMode('merchant')">Merchant</button>
+    <button class="mode-btn" id="btn-customer" onclick="setMode('customer')">Customer</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Merchant: Setup ── -->
+  <div id="setup-section">
+    <div class="card">
+      <div class="card-title">Your Monero Address</div>
+      <p class="setup-desc">Enter your Monero wallet address. It's saved locally — we never see it.</p>
+      <div class="input-group">
+        <label>XMR Address</label>
+        <input id="address-input" type="text" placeholder="4..." autocomplete="off" spellcheck="false"/>
+      </div>
+      <button class="btn btn-orange" onclick="saveAddress()">Save Address →</button>
+    </div>
+  </div>
+
+  <!-- ── Merchant: Request Payment ── -->
+  <div id="merchant-section" style="display:none;">
+    <div class="card">
+      <div class="card-title">Request Payment</div>
+      <div class="input-group">
+        <label>Amount</label>
+        <div class="amount-wrap">
+          <input id="amount-input" type="number" placeholder="0.00" min="0" step="any"
+                 oninput="updateRate()" inputmode="decimal"/>
+          <button class="currency-btn" id="currency-toggle" onclick="toggleCurrency()">USD</button>
+        </div>
+        <div class="rate-line" id="rate-line">Loading price…</div>
+      </div>
+      <div class="input-group">
+        <label>Note (optional)</label>
+        <input id="note-input" type="text" placeholder="Coffee, tip, etc."/>
+      </div>
+      <button class="btn btn-orange" onclick="generateQR()">Generate QR Code</button>
+    </div>
+
+    <!-- QR Display -->
+    <div id="qr-section" class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Show to Customer</span>
+        <span id="status-indicator">
+          <span class="status-dot waiting" id="status-dot"></span>
+          <span class="status-text" id="status-text">Waiting…</span>
+        </span>
+      </div>
+      <div class="qr-wrap">
+        <canvas id="qr-canvas" width="240" height="240"></canvas>
+        <div>
+          <div class="qr-amount" id="qr-amount-display"></div>
+          <div class="qr-sub" id="qr-xmr-display"></div>
+        </div>
+        <div class="qr-address" id="qr-address-display"></div>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+        <button class="btn btn-ghost" onclick="resetPayment()" style="flex:1">New Request</button>
+        <button class="btn btn-ghost" onclick="changeAddress()" style="flex:1">Change Address</button>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div id="history-section" class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Recent Payments</span>
+        <button onclick="clearHistory()" style="background:none;border:none;color:var(--muted);font-size:0.75rem;cursor:pointer;font-family:inherit;">Clear</button>
+      </div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Customer View ── -->
+  <div id="customer-section" class="card">
+    <div class="scan-prompt">
+      <div class="scan-icon">📷</div>
+      <strong style="color:var(--text);font-size:1.1rem;">Open your Monero wallet and scan<br/>the merchant's QR code.</strong>
+      <br/><br/>
+      Any Monero wallet works:<br/>
+      Cake Wallet · Monerujo · Feather · MyMonero
+      <br/><br/>
+      <a href="https://cakewallet.com" target="_blank" style="color:var(--orange);font-weight:700;text-decoration:none;">
+        Don't have a wallet? Get Cake Wallet →
+      </a>
+    </div>
+  </div>
+
+</main>
+
+<!-- Success overlay -->
+<div id="success-overlay">
+  <div class="success-icon">✅</div>
+  <div class="success-title">Payment Received!</div>
+  <div class="success-amount" id="success-amount"></div>
+  <button class="btn btn-orange" style="max-width:280px;margin-top:1rem;" onclick="resetPayment()">New Request</button>
+</div>
+
+<footer>
+  Money goes directly wallet-to-wallet. We see nothing. &nbsp;·&nbsp;
+  <a href="https://github.com/IamOneInx/moneropay" target="_blank">Open Source</a> &nbsp;·&nbsp;
+  <a href="https://getmonero.org" target="_blank">About Monero</a>
+</footer>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let xmrPrice = null;          // USD per XMR
+let currency = 'USD';         // current input currency
+let currentXmrAmount = null;  // XMR amount for current request
+let currentAddress = null;    // merchant's XMR address
+let pollTimer = null;
+let mode = 'merchant';
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  fetchPrice();
+  setInterval(fetchPrice, 60000);
+  loadHistory();
+
+  currentAddress = localStorage.getItem('xmr_address');
+  if (currentAddress) {
+    showMerchantMain();
+  }
+});
+
+// ── Mode toggle ───────────────────────────────────────────────────────────
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-merchant').classList.toggle('active', m === 'merchant');
+  document.getElementById('btn-customer').classList.toggle('active', m === 'customer');
+  document.getElementById('customer-section').style.display = m === 'customer' ? 'block' : 'none';
+
+  const inMerchant = m === 'merchant';
+  document.getElementById('setup-section').style.display =
+    inMerchant && !currentAddress ? 'block' : 'none';
+  document.getElementById('merchant-section').style.display =
+    inMerchant && currentAddress ? 'block' : 'none';
+}
+
+// ── Price fetch ───────────────────────────────────────────────────────────
+async function fetchPrice() {
+  try {
+    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+    const d = await r.json();
+    xmrPrice = d?.monero?.usd;
+    updateRate();
+  } catch (e) {
+    document.getElementById('rate-line').textContent = 'Price unavailable — enter XMR amount directly';
+  }
+}
+
+function updateRate() {
+  const input = parseFloat(document.getElementById('amount-input').value);
+  const el = document.getElementById('rate-line');
+  if (!input || isNaN(input)) { el.textContent = xmrPrice ? `1 XMR ≈ $${xmrPrice.toFixed(2)} USD` : ''; return; }
+  if (!xmrPrice) { el.textContent = 'Price unavailable'; return; }
+
+  if (currency === 'USD') {
+    el.textContent = `≈ ${(input / xmrPrice).toFixed(6)} XMR`;
+  } else {
+    el.textContent = `≈ $${(input * xmrPrice).toFixed(2)} USD`;
+  }
+}
+
+function toggleCurrency() {
+  currency = currency === 'USD' ? 'XMR' : 'USD';
+  document.getElementById('currency-toggle').textContent = currency;
+  document.getElementById('amount-input').value = '';
+  document.getElementById('amount-input').placeholder = currency === 'USD' ? '0.00' : '0.000000';
+  updateRate();
+}
+
+// ── Address management ────────────────────────────────────────────────────
+function saveAddress() {
+  const addr = document.getElementById('address-input').value.trim();
+  if (addr.length < 95) {
+    alert('Please enter a valid Monero address (starts with 4, 95+ characters).');
+    return;
+  }
+  localStorage.setItem('xmr_address', addr);
+  currentAddress = addr;
+  showMerchantMain();
+}
+
+function changeAddress() {
+  if (!confirm('Change your Monero address?')) return;
+  localStorage.removeItem('xmr_address');
+  currentAddress = null;
+  resetPayment();
+  document.getElementById('merchant-section').style.display = 'none';
+  document.getElementById('setup-section').style.display = 'block';
+}
+
+function showMerchantMain() {
+  document.getElementById('setup-section').style.display = 'none';
+  document.getElementById('merchant-section').style.display = 'block';
+  loadHistory();
+}
+
+// ── QR generation ─────────────────────────────────────────────────────────
+function generateQR() {
+  const rawAmount = parseFloat(document.getElementById('amount-input').value);
+  if (!rawAmount || isNaN(rawAmount) || rawAmount <= 0) {
+    alert('Enter an amount greater than 0.');
+    return;
+  }
+
+  let xmrAmount;
+  if (currency === 'USD') {
+    if (!xmrPrice) { alert('XMR price not loaded yet. Try again in a moment.'); return; }
+    xmrAmount = rawAmount / xmrPrice;
+  } else {
+    xmrAmount = rawAmount;
+  }
+
+  xmrAmount = parseFloat(xmrAmount.toFixed(12));
+  currentXmrAmount = xmrAmount;
+
+  const note = document.getElementById('note-input').value.trim();
+  // Monero payment URI
+  let uri = `monero:${currentAddress}?tx_amount=${xmrAmount}`;
+  if (note) uri += `&tx_description=${encodeURIComponent(note)}`;
+
+  const canvas = document.getElementById('qr-canvas');
+  QRCode.toCanvas(canvas, uri, {
+    width: 240,
+    margin: 1,
+    color: { dark: '#000000', light: '#ffffff' },
+    errorCorrectionLevel: 'M',
+  }, (err) => {
+    if (err) { alert('QR generation failed: ' + err.message); return; }
+  });
+
+  // Display
+  const usdDisplay = currency === 'USD'
+    ? `$${rawAmount.toFixed(2)}`
+    : xmrPrice ? `≈ $${(xmrAmount * xmrPrice).toFixed(2)}` : '';
+  document.getElementById('qr-amount-display').textContent =
+    currency === 'USD' ? `$${rawAmount.toFixed(2)} USD` : `${xmrAmount} XMR`;
+  document.getElementById('qr-xmr-display').textContent =
+    currency === 'USD' ? `${xmrAmount.toFixed(6)} XMR` : usdDisplay;
+  document.getElementById('qr-address-display').textContent = currentAddress;
+
+  document.getElementById('qr-section').style.display = 'block';
+  document.getElementById('status-dot').className = 'status-dot waiting';
+  document.getElementById('status-text').textContent = 'Waiting for payment…';
+
+  startPolling(xmrAmount, note);
+}
+
+// ── Payment detection (public node polling) ───────────────────────────────
+// Polls a public Monero node to detect incoming transactions.
+// In a self-hosted setup this would use monero-wallet-rpc.
+// For a serverless PWA we use the public node API to watch for the txid.
+
+const PUBLIC_NODES = [
+  'https://node.moneroworld.com:18089',
+  'https://xmr-node.cakewallet.com:18081',
+];
+
+function startPolling(xmrAmount, note) {
+  stopPolling();
+  let attempts = 0;
+  const maxAttempts = 180; // 30 minutes at 10s interval
+
+  pollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      stopPolling();
+      document.getElementById('status-text').textContent = 'Timed out — request expired';
+      return;
+    }
+
+    // NOTE: True payment detection requires monero-wallet-rpc watching the
+    // merchant's wallet. Without a backend, we cannot reliably detect payments
+    // to a specific address from the public node API alone.
+    //
+    // Production deployment options:
+    //   1. Self-host with monero-wallet-rpc (see README)
+    //   2. Use a payment processor like BTCPay Server with Monero plugin
+    //
+    // For demo/MVP: manual confirmation button shown after 30s
+    if (attempts === 3) {
+      addManualConfirmButton(xmrAmount, note);
+    }
+  }, 10000);
+}
+
+function addManualConfirmButton(xmrAmount, note) {
+  const existing = document.getElementById('manual-confirm');
+  if (existing) return;
+  const btn = document.createElement('button');
+  btn.id = 'manual-confirm';
+  btn.className = 'btn btn-ghost';
+  btn.style.marginTop = '0.5rem';
+  btn.textContent = '✓ Customer confirmed payment';
+  btn.onclick = () => onPaymentConfirmed(xmrAmount, note);
+  document.getElementById('qr-section').appendChild(btn);
+}
+
+function onPaymentConfirmed(xmrAmount, note) {
+  stopPolling();
+  document.getElementById('status-dot').className = 'status-dot confirmed';
+  document.getElementById('status-text').textContent = 'Confirmed!';
+
+  // Save to history
+  const history = getHistory();
+  history.unshift({
+    id: Date.now(),
+    xmr: xmrAmount,
+    usd: xmrPrice ? (xmrAmount * xmrPrice).toFixed(2) : null,
+    note: note || null,
+    ts: Date.now(),
+  });
+  if (history.length > 50) history.pop();
+  localStorage.setItem('tx_history', JSON.stringify(history));
+
+  // Show success
+  const amountStr = xmrPrice
+    ? `${xmrAmount.toFixed(6)} XMR (≈ $${(xmrAmount * xmrPrice).toFixed(2)})`
+    : `${xmrAmount.toFixed(6)} XMR`;
+  document.getElementById('success-amount').textContent = amountStr;
+  const overlay = document.getElementById('success-overlay');
+  overlay.classList.add('show');
+  setTimeout(() => overlay.classList.remove('show'), 5000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function resetPayment() {
+  stopPolling();
+  document.getElementById('qr-section').style.display = 'none';
+  document.getElementById('amount-input').value = '';
+  document.getElementById('note-input').value = '';
+  document.getElementById('success-overlay').classList.remove('show');
+  const mc = document.getElementById('manual-confirm');
+  if (mc) mc.remove();
+  currentXmrAmount = null;
+  loadHistory();
+}
+
+// ── History ───────────────────────────────────────────────────────────────
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('tx_history') || '[]'); } catch { return []; }
+}
+
+function loadHistory() {
+  const history = getHistory();
+  const section = document.getElementById('history-section');
+  const list = document.getElementById('history-list');
+  if (history.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  list.innerHTML = history.slice(0, 10).map(tx => {
+    const d = new Date(tx.ts);
+    const time = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    return `<div class="tx-item">
+      <div class="tx-left">
+        <div class="tx-label">${tx.note || 'Payment'}</div>
+        <div class="tx-time">${time}</div>
+      </div>
+      <div class="tx-amount">${tx.xmr.toFixed(6)} XMR${tx.usd ? '<br/><span style="font-size:0.75rem;color:var(--muted)">$'+tx.usd+'</span>' : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function clearHistory() {
+  if (!confirm('Clear payment history?')) return;
+  localStorage.removeItem('tx_history');
+  loadHistory();
+}
+</script>
+</body>
+</html>
