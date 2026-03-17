@@ -1,6 +1,6 @@
 {
-  "name": "MoneroPay",
-  "short_name": "MoneroPay",
+  "name": "PayXMR",
+  "short_name": "PayXMR",
   "description": "Accept Monero payments anywhere — no account, no fees",
   "start_url": "/",
   "display": "standalone",
