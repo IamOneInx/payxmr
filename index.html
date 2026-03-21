@@ -257,7 +257,7 @@
         <label>Note (optional)</label>
         <input id="note-input" type="text" placeholder="Coffee, tip, etc."/>
       </div>
-      <button class="btn btn-orange" onclick="generateQR()">Generate QR Code</button>
+      <button class="btn btn-orange" id="generate-btn" onclick="generateQR()">Generate QR Code</button>
     </div>
 
     <!-- QR Display -->
@@ -470,6 +470,10 @@ async function generateQR() {
   document.getElementById('status-dot').className = 'status-dot waiting';
   document.getElementById('status-text').textContent = 'Waiting for payment…';
 
+  // Disable button to prevent double-submit
+  const genBtn = document.getElementById('generate-btn');
+  if (genBtn) genBtn.disabled = true;
+
   // Create payment session on backend
   try {
     const resp = await fetch('/api/payment', {
@@ -494,6 +498,8 @@ async function generateQR() {
     backendEnabled = false;
     document.getElementById('backend-status').innerHTML = '<span class="backend-badge offline">Offline — Manual Confirm Mode</span>';
     startPolling(xmrAmount, note);
+  } finally {
+    if (genBtn) genBtn.disabled = false;
   }
 }
 

@@ -7,7 +7,7 @@ export async function onRequestPost({ request, env }) {
 
   try {
     const { address, amount, note } = await request.json();
-    if (!address || !amount) {
+    if (!address || !amount || parseFloat(amount) <= 0) {
       return new Response(JSON.stringify({ error: 'address and amount required' }), { status: 400, headers });
     }
 
