@@ -10,7 +10,6 @@
   <link rel="manifest" href="manifest.json"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
-  <!-- QR code library -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
   <style>
@@ -143,8 +142,22 @@
     }
     .status-dot.waiting { background: #f59e0b; }
     .status-dot.confirmed { background: var(--success); animation: none; }
+    .status-dot.error { background: var(--error); animation: none; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
     .status-text { font-size: 0.85rem; font-weight: 600; }
+
+    /* ── Backend badge ── */
+    .backend-badge {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25);
+      color: var(--success); border-radius: 6px;
+      font-size: 0.68rem; font-weight: 700; padding: 0.2rem 0.5rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .backend-badge.offline {
+      background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.25);
+      color: #f59e0b;
+    }
 
     /* ── Success overlay ── */
     #success-overlay {
@@ -218,7 +231,7 @@
   <div id="setup-section">
     <div class="card">
       <div class="card-title">Your Monero Address</div>
-      <p class="setup-desc">Enter your Monero wallet address. It's saved locally — we never see it.</p>
+      <p class="setup-desc">Enter your Monero wallet address. It's saved locally — we never store it.</p>
       <div class="input-group">
         <label>XMR Address</label>
         <input id="address-input" type="text" placeholder="4..." autocomplete="off" spellcheck="false"/>
@@ -256,6 +269,7 @@
           <span class="status-text" id="status-text">Waiting…</span>
         </span>
       </div>
+      <div id="backend-status" style="margin-bottom:0.75rem;"></div>
       <div class="qr-wrap">
         <canvas id="qr-canvas" width="240" height="240"></canvas>
         <div>
@@ -307,18 +321,20 @@
 
 <footer>
   Money goes directly wallet-to-wallet. We see nothing. &nbsp;·&nbsp;
-  <a href="https://github.com/IamOneInx/moneropay" target="_blank">Open Source</a> &nbsp;·&nbsp;
+  <a href="https://github.com/IamOneInx/payxmr" target="_blank">Open Source</a> &nbsp;·&nbsp;
   <a href="https://getmonero.org" target="_blank">About Monero</a>
 </footer>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
-let xmrPrice = null;          // USD per XMR
-let currency = 'USD';         // current input currency
-let currentXmrAmount = null;  // XMR amount for current request
-let currentAddress = null;    // merchant's XMR address
+let xmrPrice = null;
+let currency = 'USD';
+let currentXmrAmount = null;
+let currentAddress = null;
+let currentPaymentId = null;
 let pollTimer = null;
 let mode = 'merchant';
+let backendEnabled = false;
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -327,9 +343,7 @@ window.addEventListener('DOMContentLoaded', () => {
   loadHistory();
 
   currentAddress = localStorage.getItem('xmr_address');
-  if (currentAddress) {
-    showMerchantMain();
-  }
+  if (currentAddress) showMerchantMain();
 });
 
 // ── Mode toggle ───────────────────────────────────────────────────────────
@@ -349,12 +363,20 @@ function setMode(m) {
 // ── Price fetch ───────────────────────────────────────────────────────────
 async function fetchPrice() {
   try {
-    const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+    const r = await fetch('/api/price');
     const d = await r.json();
-    xmrPrice = d?.monero?.usd;
+    xmrPrice = d?.usd;
     updateRate();
-  } catch (e) {
-    document.getElementById('rate-line').textContent = 'Price unavailable — enter XMR amount directly';
+  } catch {
+    try {
+      // Fallback to CoinGecko directly
+      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
+      const d = await r.json();
+      xmrPrice = d?.monero?.usd;
+      updateRate();
+    } catch {
+      document.getElementById('rate-line').textContent = 'Price unavailable — enter XMR amount directly';
+    }
   }
 }
 
@@ -407,7 +429,7 @@ function showMerchantMain() {
 }
 
 // ── QR generation ─────────────────────────────────────────────────────────
-function generateQR() {
+async function generateQR() {
   const rawAmount = parseFloat(document.getElementById('amount-input').value);
   if (!rawAmount || isNaN(rawAmount) || rawAmount <= 0) {
     alert('Enter an amount greater than 0.');
@@ -426,21 +448,15 @@ function generateQR() {
   currentXmrAmount = xmrAmount;
 
   const note = document.getElementById('note-input').value.trim();
-  // Monero payment URI
-  let uri = `monero:${currentAddress}?tx_amount=${xmrAmount}`;
-  if (note) uri += `&tx_description=${encodeURIComponent(note)}`;
+  const uri = `monero:${currentAddress}?tx_amount=${xmrAmount}${note ? `&tx_description=${encodeURIComponent(note)}` : ''}`;
 
   const canvas = document.getElementById('qr-canvas');
   QRCode.toCanvas(canvas, uri, {
-    width: 240,
-    margin: 1,
+    width: 240, margin: 1,
     color: { dark: '#000000', light: '#ffffff' },
     errorCorrectionLevel: 'M',
-  }, (err) => {
-    if (err) { alert('QR generation failed: ' + err.message); return; }
-  });
+  }, (err) => { if (err) alert('QR error: ' + err.message); });
 
-  // Display
   const usdDisplay = currency === 'USD'
     ? `$${rawAmount.toFixed(2)}`
     : xmrPrice ? `≈ $${(xmrAmount * xmrPrice).toFixed(2)}` : '';
@@ -454,65 +470,91 @@ function generateQR() {
   document.getElementById('status-dot').className = 'status-dot waiting';
   document.getElementById('status-text').textContent = 'Waiting for payment…';
 
-  startPolling(xmrAmount, note);
+  // Create payment session on backend
+  try {
+    const resp = await fetch('/api/payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: currentAddress, amount: xmrAmount, note }),
+    });
+    const data = await resp.json();
+    currentPaymentId = data.id;
+    backendEnabled = data.backendEnabled;
+
+    const badge = document.getElementById('backend-status');
+    if (backendEnabled) {
+      badge.innerHTML = '<span class="backend-badge">Live Detection Active</span>';
+    } else {
+      badge.innerHTML = '<span class="backend-badge offline">Manual Confirm Mode</span>';
+    }
+
+    startPolling(xmrAmount, note);
+  } catch (e) {
+    // API not available (local dev) — fall back to manual
+    backendEnabled = false;
+    document.getElementById('backend-status').innerHTML = '<span class="backend-badge offline">Offline — Manual Confirm Mode</span>';
+    startPolling(xmrAmount, note);
+  }
 }
 
-// ── Payment detection (public node polling) ───────────────────────────────
-// Polls a public Monero node to detect incoming transactions.
-// In a self-hosted setup this would use monero-wallet-rpc.
-// For a serverless PWA we use the public node API to watch for the txid.
-
-const PUBLIC_NODES = [
-  'https://node.moneroworld.com:18089',
-  'https://xmr-node.cakewallet.com:18081',
-];
-
+// ── Payment detection ─────────────────────────────────────────────────────
 function startPolling(xmrAmount, note) {
   stopPolling();
   let attempts = 0;
-  const maxAttempts = 180; // 30 minutes at 10s interval
+  const maxAttempts = 180; // 30 min at 10s intervals
 
   pollTimer = setInterval(async () => {
     attempts++;
     if (attempts > maxAttempts) {
       stopPolling();
       document.getElementById('status-text').textContent = 'Timed out — request expired';
+      document.getElementById('status-dot').className = 'status-dot error';
       return;
     }
 
-    // NOTE: True payment detection requires monero-wallet-rpc watching the
-    // merchant's wallet. Without a backend, we cannot reliably detect payments
-    // to a specific address from the public node API alone.
-    //
-    // Production deployment options:
-    //   1. Self-host with monero-wallet-rpc (see README)
-    //   2. Use a payment processor like BTCPay Server with Monero plugin
-    //
-    // For demo/MVP: manual confirmation button shown after 30s
-    if (attempts === 3) {
+    if (currentPaymentId) {
+      try {
+        const resp = await fetch(`/api/payment/${currentPaymentId}`);
+        const data = await resp.json();
+
+        if (data.status === 'confirmed') {
+          onPaymentConfirmed(xmrAmount, note, true);
+          return;
+        }
+        if (data.status === 'expired') {
+          stopPolling();
+          document.getElementById('status-text').textContent = 'Expired';
+          document.getElementById('status-dot').className = 'status-dot error';
+          return;
+        }
+      } catch {
+        // Network error — keep trying
+      }
+    }
+
+    // Show manual confirm button after 30s if backend detection not active
+    if (attempts === 3 && !backendEnabled) {
       addManualConfirmButton(xmrAmount, note);
     }
   }, 10000);
 }
 
 function addManualConfirmButton(xmrAmount, note) {
-  const existing = document.getElementById('manual-confirm');
-  if (existing) return;
+  if (document.getElementById('manual-confirm')) return;
   const btn = document.createElement('button');
   btn.id = 'manual-confirm';
   btn.className = 'btn btn-ghost';
   btn.style.marginTop = '0.5rem';
   btn.textContent = '✓ Customer confirmed payment';
-  btn.onclick = () => onPaymentConfirmed(xmrAmount, note);
+  btn.onclick = () => onPaymentConfirmed(xmrAmount, note, false);
   document.getElementById('qr-section').appendChild(btn);
 }
 
-function onPaymentConfirmed(xmrAmount, note) {
+function onPaymentConfirmed(xmrAmount, note, auto) {
   stopPolling();
   document.getElementById('status-dot').className = 'status-dot confirmed';
-  document.getElementById('status-text').textContent = 'Confirmed!';
+  document.getElementById('status-text').textContent = auto ? 'Confirmed on-chain!' : 'Confirmed!';
 
-  // Save to history
   const history = getHistory();
   history.unshift({
     id: Date.now(),
@@ -520,11 +562,11 @@ function onPaymentConfirmed(xmrAmount, note) {
     usd: xmrPrice ? (xmrAmount * xmrPrice).toFixed(2) : null,
     note: note || null,
     ts: Date.now(),
+    auto,
   });
   if (history.length > 50) history.pop();
   localStorage.setItem('tx_history', JSON.stringify(history));
 
-  // Show success
   const amountStr = xmrPrice
     ? `${xmrAmount.toFixed(6)} XMR (≈ $${(xmrAmount * xmrPrice).toFixed(2)})`
     : `${xmrAmount.toFixed(6)} XMR`;
@@ -540,10 +582,13 @@ function stopPolling() {
 
 function resetPayment() {
   stopPolling();
+  currentPaymentId = null;
+  backendEnabled = false;
   document.getElementById('qr-section').style.display = 'none';
   document.getElementById('amount-input').value = '';
   document.getElementById('note-input').value = '';
   document.getElementById('success-overlay').classList.remove('show');
+  document.getElementById('backend-status').innerHTML = '';
   const mc = document.getElementById('manual-confirm');
   if (mc) mc.remove();
   currentXmrAmount = null;
@@ -567,7 +612,7 @@ function loadHistory() {
     return `<div class="tx-item">
       <div class="tx-left">
         <div class="tx-label">${tx.note || 'Payment'}</div>
-        <div class="tx-time">${time}</div>
+        <div class="tx-time">${time}${tx.auto ? ' · on-chain' : ''}</div>
       </div>
       <div class="tx-amount">${tx.xmr.toFixed(6)} XMR${tx.usd ? '<br/><span style="font-size:0.75rem;color:var(--muted)">$'+tx.usd+'</span>' : ''}</div>
     </div>`;
