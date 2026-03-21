@@ -14,16 +14,21 @@ export async function onRequestGet({ params, env }) {
     return new Response(JSON.stringify(payment), { headers });
   }
 
+  // Check expiry before anything else — prevents confirming a late payment
   if (Date.now() > payment.expires) {
-    payment.status = 'expired';
-    await env.PAYMENTS.put(`payment:${id}`, JSON.stringify(payment), { expirationTtl: 3600 });
+    if (payment.status !== 'expired') {
+      payment.status = 'expired';
+      // Don't reset TTL — let the original KV expiry clean up naturally
+      await env.PAYMENTS.put(`payment:${id}`, JSON.stringify(payment), { expirationTtl: 1800 });
+    }
     return new Response(JSON.stringify(payment), { headers });
   }
 
   // Live check via monero-wallet-rpc if configured
   if (env.MONERO_RPC_URL) {
     const confirmed = await checkWalletRpc(env.MONERO_RPC_URL, payment);
-    if (confirmed) {
+    // Re-check expiry after the (potentially slow) RPC call
+    if (confirmed && Date.now() <= payment.expires) {
       payment.status = 'confirmed';
       payment.confirmedAt = Date.now();
       await env.PAYMENTS.put(`payment:${id}`, JSON.stringify(payment), { expirationTtl: 86400 });
@@ -36,7 +41,7 @@ export async function onRequestGet({ params, env }) {
 async function checkWalletRpc(rpcUrl, payment) {
   // Amount in piconero (1 XMR = 1e12 piconero)
   const targetPiconero = Math.round(payment.amount * 1e12);
-  // Only look at transfers after payment was created (with 60s buffer)
+  // Accept transfers from 60s before payment was created (buffer for slow backends)
   const cutoffMs = payment.created - 60_000;
 
   try {
@@ -60,8 +65,13 @@ async function checkWalletRpc(rpcUrl, payment) {
 
     for (const tx of transfers) {
       const txMs = tx.timestamp * 1000;
-      // Amount tolerance: 1 piconero (handles rounding)
-      if (txMs >= cutoffMs && Math.abs(tx.amount - targetPiconero) <= 1) {
+      // Tolerance: 1000 piconero (~$0.0000002) to absorb float rounding on both sides
+      // Also verify the receiving address matches — critical for multi-address wallets
+      if (
+        txMs >= cutoffMs &&
+        Math.abs(tx.amount - targetPiconero) <= 1000 &&
+        tx.address === payment.address
+      ) {
         return true;
       }
     }
