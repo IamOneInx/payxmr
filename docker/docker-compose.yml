@@ -1,0 +1,61 @@
+services:
+
+  # monero-wallet-rpc
+  #
+  # Runs a VIEW-ONLY Monero wallet that watches for incoming payments.
+  # View-only = has the public address + private view key, NO spend key.
+  # Even if this container is fully compromised, funds cannot be stolen.
+  #
+  # Prerequisites:
+  #   1. Create your view-only wallet files first (see README.md)
+  #   2. Place wallet files in ./wallet/ (wallet, wallet.keys, wallet.address.txt)
+  #   3. Set WALLET_PASSWORD in .env (can be empty string "")
+  #   4. Set RPC_LOGIN in .env as "user:password" — used by payxmr backend
+  #
+  # The wallet connects to a PUBLIC Monero remote node — no need to sync
+  # the full blockchain (200GB+). Uses moneroworld.com by default.
+  # Swap DAEMON_ADDRESS for your own node if you have one.
+
+  monero-wallet-rpc:
+    image: sethsimmons/simple-monero-wallet-rpc:latest
+    container_name: payxmr-wallet-rpc
+    restart: unless-stopped
+
+    volumes:
+      # Wallet files live here — never commit this directory to git
+      - ./wallet:/wallet
+
+    environment:
+      # Public remote Monero node — no local chain sync required.
+      # Alternatives: node.sethforprivacy.com:18089, node.community.rino.io:18089
+      DAEMON_ADDRESS: node.moneroworld.com:18089
+
+      # RPC listen address — 0.0.0.0 so Cloudflare Tunnel can reach it
+      RPC_BIND_IP: 0.0.0.0
+      RPC_BIND_PORT: 18083
+
+      # Basic auth — ALWAYS set this. The URL you give to MONERO_RPC_URL
+      # should include these credentials: http://user:pass@localhost:18083
+      RPC_LOGIN: ${RPC_LOGIN}
+
+      # Path inside the container to the wallet file
+      WALLET_FILE: /wallet/payxmr
+
+      # Wallet password — can be empty string but must match what was set
+      # when the wallet was created
+      WALLET_PASSWORD: ${WALLET_PASSWORD}
+
+    # Only expose to localhost — Cloudflare Tunnel reaches it via host network.
+    # Do NOT expose 18083 to 0.0.0.0 on your machine directly.
+    ports:
+      - "127.0.0.1:18083:18083"
+
+    # Healthcheck: ping the RPC endpoint every 30s
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-u", "${RPC_LOGIN}",
+             "http://localhost:18083/json_rpc",
+             "-d", "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_version\"}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
